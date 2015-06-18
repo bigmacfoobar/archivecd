@@ -946,8 +946,16 @@ class EACPage(WizardPage):
         self.args = {}
 
         def handle_button_upload():
-            #webbrowser.open(self.url)
-            webbrowser.open(self.uploadfile)
+            try:
+                self.use_tempfile= self.wizard.settings.get('settings').get('use-tempfile',False)
+            except:
+                self.use_tempfile= False
+            
+            if self.use_tempfile:
+                webbrowser.open(self.uploadfile)
+            else:
+                webbrowser.open(self.url)
+                
             self.button_clicked = True
             self.emit(QtCore.SIGNAL("completeChanged()"))
 

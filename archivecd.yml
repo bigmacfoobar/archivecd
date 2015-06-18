@@ -20,3 +20,5 @@ fields:
     readonly : true
 settings:
   force-upload : true
+  use-tempfile : true
+  
