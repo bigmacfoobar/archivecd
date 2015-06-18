@@ -18,12 +18,15 @@
 
 import os
 import sys
+import archivecd_config
+from xml.sax.saxutils import escape, unescape
+import tempfile
 
 #fix for loading discid.dll
 if getattr(sys, 'frozen', None):
-     BASE_DIR = sys._MEIPASS
+    BASE_DIR = sys._MEIPASS
 else:
-     BASE_DIR = os.getcwd()
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # os.getcwd()
 os.environ['PATH'] = BASE_DIR + '\;' + os.environ.get('PATH', '')
 import discid
 
@@ -45,7 +48,7 @@ class ArchiveWizard(QtGui.QWizard):
     Page_Intro, Page_Scan_Drives, Page_Lookup_CD, Page_Mark_Added, Page_MusicBrainz, Page_EAC, Page_Select_EAC, Page_Verify_EAC, Page_Upload, Page_Verify_Upload = range(10)
 
     useragent = 'Internet Archive Music Locker'
-    version   = '0.122'
+    version   = '0.123'
     url       = 'https://archive.org'
     archivecd_server = 'dowewantit0.us.archive.org'
     archivecd_port   = '5000'
@@ -89,6 +92,7 @@ class ArchiveWizard(QtGui.QWizard):
         self.setPage(self.Page_MusicBrainz,   self.musicbrainz_page)
         self.setPage(self.Page_EAC,           self.eac_page)
 
+        self.settings= archivecd_config.read(BASE_DIR)
 
     def done(self, x):
         if x == 1:
@@ -750,22 +754,30 @@ class LookupCDPage(WizardPage):
         print 'background task done'
         sys.stdout.flush()
         self.progress_bar.hide()
+        try:
+            self.force_upload= self.wizard.settings.get('settings').get('force-upload',False)
+        except:
+            self.force_upload= False
+        
         if self.wizard.toc_string is not None:
             self.show_result()
-
-
+             
     def show_result(self):
         self.show_ia = self.got_md('archive.org')
         self.show_md = self.show_ia
+        
         for key in self.wizard.metadata_services:
             self.show_md |= self.got_md(key)
+        if self.force_upload:
+            self.show_ia= None
 
-        print 'ia', self.show_ia, ' md', self.show_md
+        print 'ia', self.show_ia, ' md', self.show_md, ' force', self.force_upload
         sys.stdout.flush()
 
         if self.show_ia:
             self.status_label.setText('A possible match for this CD was found in the Archive.org database. Please select your CD below.')
             widget, self.radio_buttons, self.wizard.ia_result = self.wizard.display_metadata(self, ['archive.org'])
+            # if we want to force upload, we select the bottom option and click next...       
         elif self.show_md:
             self.status_label.setText('The CD was not in Archive.org, so please upload it. Select metadata that matches your CD below.')
             widget, self.radio_buttons, self.wizard.mb_result = self.wizard.display_metadata(self, self.wizard.metadata_services)
@@ -934,7 +946,8 @@ class EACPage(WizardPage):
         self.args = {}
 
         def handle_button_upload():
-            webbrowser.open(self.url)
+            #webbrowser.open(self.url)
+            webbrowser.open(self.uploadfile)
             self.button_clicked = True
             self.emit(QtCore.SIGNAL("completeChanged()"))
 
@@ -970,6 +983,41 @@ class EACPage(WizardPage):
         self.button_clicked = False
         self.setButtonText(QtGui.QWizard.FinishButton, "Scan Another CD")
 
+    def htmloutput(self,nam,val):
+        # escape() and unescape() takes care of &, < and >.
+        html_escape_table = {
+            '"': "&quot;",
+            "'": "&apos;"
+        }
+        html_unescape_table = {v:k for k, v in html_escape_table.items()}
+        
+        def html_escape(text):
+            return escape(text, html_escape_table)
+        
+        def html_unescape(text):
+            return unescape(text, html_unescape_table)
+        
+        vv = html_escape(val)
+        if val.find('\n')>=0:
+            vv= '<textarea name="'+nam+'">\n'+vv+'\n</textarea>\n'
+        else:
+            vv= '<input type="text" name="'+nam+'" value="'+vv+'">\n'
+        return vv
+
+    def writepage(self, str_args):
+        of= tempfile.NamedTemporaryFile("w",-1,".html","upload",None,False)
+        with of:
+            of.write('<html><head /><body>\n<form name="upload" action="https://archive.org/upload/" method="POST">\n')
+            for key,val in str_args.iteritems():
+                if isinstance(val, list):
+                    for item in val:
+                        of.write(self.htmloutput(key,item))
+                elif isinstance(val,str):
+                    of.write(self.htmloutput(key,val))
+                else:
+                    of.write(self.htmloutput(key,'None'))
+            of.write('</form>\n<script type="text/javascript">\ndocument.upload.submit();\n</script>\n</body></html>\n')
+        return of.name
 
     def initializePage(self):
         self.button_clicked = False
@@ -1028,6 +1076,8 @@ class EACPage(WizardPage):
         print urllib.urlencode(str_args, True)
         sys.stdout.flush()
 
+        self.uploadfile= self.writepage( str_args ) 
+
         self.url += '?' + urllib.urlencode(str_args, True)
 
 
@@ -1067,8 +1117,12 @@ class EACPage(WizardPage):
     def utf8_encode(self, args):
         str_args = {}
         for k, v in args.iteritems():
+            if isinstance(k,unicode):
+                kk= k.encode('utf-8')
+            else:
+                kk= k
             if isinstance(v, unicode):
-                str_args[k] = v.encode('utf-8')
+                str_args[kk] = v.encode('utf-8')
             elif isinstance(v, list):
                 l = []
                 for item in v:
@@ -1076,9 +1130,9 @@ class EACPage(WizardPage):
                         l.append(item.encode('utf-8'))
                     else:
                         l.append(item)
-                str_args[k] = l
+                str_args[kk] = l
             else:
-                str_args[k] = v
+                str_args[kk] = v
         return str_args
 
 

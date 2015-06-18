@@ -1,0 +1,22 @@
+version: 0.123
+fields:
+  collection:
+    value    : 'archiveofcontemporarymusic'
+    type     : string
+    width    : 40
+    lines    : 1
+    readonly : true
+  external-identifier:
+    value    : 'urn:arcmusic:'
+    type     : string
+    width    : 40
+    lines    : 1
+    readonly : true
+  scancenter:
+    value    : 'richflorida'
+    type     : string
+    width    : 40
+    lines    : 1
+    readonly : true
+settings:
+  force-upload : true
